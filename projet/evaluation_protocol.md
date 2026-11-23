@@ -84,6 +84,23 @@ must be frozen before any final test.
 
 ## Checks
 
-Run `python -m unittest discover -s projet -p test_evaluation.py` from the
+Image-level `binary_metrics` reports counts, precision, recall, F1, specificity,
+false-positive rate, average precision and ROC AUC from continuous scores.
+Undefined values are `None`; report class support and the selected threshold.
+Average precision summarizes the precision-recall curve and is not trapezoidal
+PR-AUC. `detection_summary` reports per-class F1, AP50 and mean AP over IoUs
+0.50 through 0.95 in 0.05 steps, using the supplied predictions and 101-point
+interpolation. This is not an official COCO evaluator, which has additional
+area and maximum-detection conventions. Classes without ground truth are omitted
+from AP means. Score floors and NMS can affect AP and must be reported.
+
+`benchmark_inference` measures the supplied callable, after warm-up, with
+per-image, mean, median, p95 and maximum wall times. To measure end-to-end CPU
+latency, the caller must include preprocessing, model inference and postprocessing
+in that callable and record the hardware, thread settings, sample IDs and timing
+boundaries separately. Training duration must be measured around each training
+run. Record metrics and timing in MLflow from the model-specific scripts.
+
+Run `python -m unittest projet.tests.test_evaluation` from the
 repository root. These are hand-checkable fixtures, not model results. Do not
 open the held-out test while designing the protocol.

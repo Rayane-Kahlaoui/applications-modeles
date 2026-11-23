@@ -5,7 +5,7 @@ from collections import Counter
 
 import numpy as np
 
-from evaluation import (choose_threshold, class_metrics, evaluate_boxes, image_alert_metrics,
+from projet.evaluation import (choose_threshold, class_metrics, detection_summary, evaluate_boxes, image_alert_metrics,
                         mask_metrics, match_boxes, review_queue, threshold_sweep)
 
 
@@ -25,6 +25,14 @@ class EvaluationFixtures(unittest.TestCase):
         self.assertEqual(match_boxes([], [], 0.5), {"tp": 0, "fp": 0, "fn": 0})
         self.assertEqual(match_boxes([self.truth], [self.prediction], 0.9),
                          {"tp": 0, "fp": 0, "fn": 1})
+
+    def test_detection_summary_excludes_unsupported_classes(self):
+        images = {"a": {"ground_truth": [self.truth], "predictions": [self.prediction]}}
+        result = detection_summary(images, 0.5, [1, 2])
+        self.assertEqual(result["map50"], 1.0)
+        self.assertEqual(result["map50_95"], 1.0)
+        self.assertEqual(result["per_class"][1]["f1"], 1.0)
+        self.assertIsNone(result["per_class"][2]["ap50"])
 
     def test_sweep_and_class_metrics(self):
         images = {"a": {"ground_truth": [self.truth], "predictions": [self.prediction]},

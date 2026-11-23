@@ -114,10 +114,158 @@ checked against independent per-threshold matching on artificial examples,
 including 100 seeded synthetic cases with tied scores. Seven evaluator fixture
 tests passed. Mask
 overlap is accumulated per image to avoid retaining the whole dataset in memory.
-These are fixture checks; no model results are available yet.
+These are fixture checks.
+
+## Classical pilot
+
+The owner selected Severstal as the sole study dataset. The assignment names
+NEU-DET and its shared split, so instructor acceptance of this choice remains
+unverified.
+
+On the `model/classical` branch, an exploratory Severstal HOG/linear-SVM pilot
+used 500 train and 30 validation images, seed 0. The initial random validation
+sample had no instances of classes 1 or 2. The selected grid configuration was
+C=1, contrast cutoff 25 and minimum area 60. Candidate recall was 6/27 at IoU
+0.5. At the threshold selected on this same validation sample, TP=1, FP=9 and
+FN=26, yielding 8.97 cost units per image under the hypothetical 10:1 costs.
+This is preliminary and cannot establish generalization or rare-class recall.
+No held-out test data was used. The pilot code was removed at the owner's
+request, while its recorded local results and selected model remain in the cache.
+
+Simulated validation lighting, noise, rotation and blur were assessed on the
+same 30 images and selected threshold. Their ranges are illustrative, without
+measurements from a factory line. The full-image augmentation helper transforms
+boxes and masks but has not been connected to detector training. See
+`../projet/mlops/README.md` for MLflow commands. MLflow stores experiment
+metadata and artifacts locally in ignored `.cache/mlflow/`. The pilot import
+is marked retrospective and its exact training-code snapshot is unavailable.
+Future training scripts must explicitly log their experiment evidence.
+
+The Severstal loader now reads the fixed manifest, class masks and derived boxes,
+with deterministic train-only augmentation. A smoke check loaded representative
+training and validation examples for each of the four classes and clean images.
+This does not validate every dataset entry. Image-level binary metrics, detection
+AP summaries and a callable-based inference timing helper are available for
+experiments.
+
+### Initial classical comparisons
+
+On a seeded 500-training-image, 200-validation-image pilot, HOG with a linear
+SVM achieved image-level AP 0.817 and ROC AUC 0.759. Spatial intensity and
+gradient features with a random forest achieved AP 0.895 and ROC AUC 0.856.
+At image-level thresholds chosen on that same validation sample using the
+hypothetical 10:1 cost, the SVM produced 109 TP, 89 FP, 0 FN and 2 TN. The
+forest produced 108 TP, 67 FP, 1 FN and 24 TN. These figures are exploratory,
+use a relatively small sample and the thresholds are chosen on the same data.
+The scores and sampled IDs are preserved in the local MLflow artifacts.
+
+A separate region-proposal detector pilot used 500 training and 100 validation
+images with three contrast/area configurations: (25,60), (15,20), (35,20).
+At IoU 0.5, proposal recall was respectively 36/142, 20/142 and 25/142. The
+corresponding AP50 values were approximately 0.0023, 0.0010 and 0.0004. These
+figures are poor, based on a small sample, and do not establish deployment
+performance. Full predictions, data IDs and settings are retained in MLflow.
+Concurrent jobs ran during these pilots, making timing unsuitable for comparing
+models. No held-out test data was used.
+
+### Full-split image-level comparisons
+
+The original full-data LinearSVC run was stopped after more than ten minutes
+in fitting and marked killed in MLflow. A new run used a stochastic linear SVM
+with hinge loss, balanced class weights, alpha 0.0001 and averaged SGD. Both
+methods used all 10,050 training and 1,252 validation images, seed 0, original
+images without augmentation and the same sampled ordering. The test split was
+not opened. Scores, IDs, selected thresholds, settings and fitted models are in
+local MLflow. Thresholds and metrics were selected and reported on the same
+validation split, so the operating-point metrics are optimistically selected.
+
+| Method | AP | ROC AUC | TP | FP | FN | TN | Cost/image |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| HOG, stochastic linear SVM | 0.828 | 0.808 | 662 | 588 | 0 | 2 | 0.470 |
+| Spatial texture, random forest | 0.960 | 0.955 | 652 | 216 | 10 | 374 | 0.252 |
+
+The cost is the hypothetical image-level 10:1 miss-to-false-alert scenario.
+Both methods alerted on all 23 validation images containing class 2. This is
+image alert recall, not class identification recall, and such images can contain
+multiple classes. The source data has no production-run grouping, so the split
+does not establish performance on independent factory runs. Data prevalence can
+differ from deployment prevalence.
+
+The 50-image decoded-image-to-score timing sample had median/p95 of 5.7/6.2 ms
+for the HOG model and 40.5/56.9 ms for the forest. It excludes disk access and
+is not a controlled release benchmark. Other processes were running during the
+experiments. Fit times were 34.6 seconds and 2.3 seconds respectively, excluding
+feature extraction and input loading. CPU memory, thread settings and full
+end-to-end deployment boundaries require controlled measurement later.
+
+## Rubric and remaining evidence
+
+### Binary baseline tuning experiment
+
+The fixed validation split was divided into 626 tuning and 626 comparison
+images by a seeded, binary-stratified split. All four configurations trained on
+the same 10,050 training images and the same original spatial texture features.
+Thresholds were selected on tuning using the 10:1 image-level cost. The
+comparison results below use those fixed thresholds.
+
+| Model | Tuning cost/image | Comparison AP | Comparison TP | FP | FN | TN | Comparison cost/image |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Random forest, 150 trees, leaf 2 | 0.252 | 0.963 | 325 | 103 | 6 | 192 | 0.260 |
+| Random forest, 300 trees, leaf 1 | 0.224 | 0.964 | 324 | 86 | 7 | 209 | 0.249 |
+| Extra Trees, 300 trees, leaf 1 | 0.184 | 0.970 | 326 | 81 | 5 | 214 | 0.209 |
+| Histogram gradient boosting | 0.192 | 0.972 | 326 | 94 | 5 | 201 | 0.230 |
+
+The Extra Trees configuration had the lowest tuning cost and 22 fewer false
+alerts on the comparison portion than the 150-tree reference, with one fewer
+miss. Both alerted on all 11 comparison images containing class 2, which is an
+image-level outcome and does not establish class-identification performance.
+The model family and thresholds were explored on these validation portions,
+so repeated use limits their independence. The test split remains sealed. See
+`../projet/training/README.md` and MLflow for configurations and image IDs.
+
+The contrast-region proposal grid was evaluated on 100 tuning images. The
+original detector setting matched 40 of 136 annotated boxes at IoU 0.5; the
+best studied setting matched 46, with mean proposals increasing from 27.55 to
+67.55 per image. End-to-end evaluation on the same images showed AP50 0.00261
+for the original and 0.00156 for the altered proposals. Both cost-selected
+thresholds produced zero true positives. These remain exploratory results.
+
+On the same 100 tuning images and the improved proposal configuration, a
+stochastic SVM trained on reference crops and random background achieved
+AP50 0.00207 and zero TP at its tuned threshold. Adding matched proposals and
+hard background proposals during training increased tuning AP50 to 0.01381,
+with 8 TP, 56 FP and 128 FN at its validation-selected threshold. The altered
+sampling also changes the random background draws. A LinearSVC hard-negative
+fit was stopped after several minutes and marked killed in MLflow.
+
+The hard-negative SGD model and its fixed tuning threshold were re-created and
+evaluated on the separate 626-image validation comparison portion. Proposal
+recall was 232/977 (0.237), AP50 was 0.00625, and the fixed threshold gave
+16 TP, 306 FP and 961 FN. Class 2 had zero matched detections among 15 reference
+boxes. The proposal and training strategy therefore remains inadequate. The
+comparison portion has now been examined and remains validation data. Only 500
+training images were used in this detector experiment; the test is unopened.
+
+The professor requires a carefully tuned non-deep-learning reference and fair
+comparisons on the same data and task, validation/test separation for the full
+system and chosen extension, and exactly one final test measurement. Choices,
+cost assumptions, operating thresholds and metrics must follow the factory need.
+Production evidence must include documented CPU throughput, paired optimization
+speed and quality changes, and concrete monitoring thresholds. The final analysis
+must quantify failures and support its recommendation with measurements. The
+repository must replay as provided in under 15 minutes, with documented code and
+regular history. Test tuning, unexecuted numbers and failed replay are penalized.
+
+Current binary methods are initial fixed configurations, and the localization
+pilot is preliminary. Image-level and detection methods produce different
+outputs and need task-matched comparisons on identical validation IDs. The
+test has not been opened. Hyperparameter tuning, the rare-defect extension's
+separate protocol, controlled CPU benchmarking, optimization trade-offs,
+monitoring thresholds, quantified failure analysis and timed clean replay remain
+to be completed. Instructor acceptance of the Severstal-only choice is unverified.
 
 ## AI assistance
 
 Codex assisted with project planning, dataset research, repository and data
-preparation, inspection scripts, checks and documentation. Add further actual
+preparation, inspection scripts, classical pilot, MLflow integration, checks and documentation. Add further actual
 uses as they occur so the owner can write the required final disclosure.

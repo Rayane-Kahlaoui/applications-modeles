@@ -129,6 +129,34 @@ def class_metrics(images, threshold, class_id, iou_threshold=0.5):
             "recall": tp / support if support else None, "ap50": ap}
 
 
+def detection_summary(images, threshold, class_ids):
+    """Summarize class-aware 101-point AP at IoUs 0.50 through 0.95.
+
+    AP uses the predictions supplied by the caller, which may already have been
+    filtered by a model score floor or NMS. Unsupported classes are omitted from
+    means and reported with undefined AP.
+    """
+    if not images or not math.isfinite(threshold):
+        raise ValueError("Expected images and a finite threshold")
+    class_ids = list(class_ids)
+    if not class_ids or len(class_ids) != len(set(class_ids)):
+        raise ValueError("Class IDs must be nonempty and unique")
+    per_class = {}
+    for class_id in class_ids:
+        rows = [class_metrics(images, threshold, class_id, iou_threshold=float(iou_threshold))
+                for iou_threshold in np.arange(50, 100, 5) / 100]
+        result = rows[0].copy()
+        tp, fp, fn = (result[key] for key in ("tp", "fp", "fn"))
+        result["f1"] = 2 * tp / (2 * tp + fp + fn) if 2 * tp + fp + fn else None
+        aps = [row["ap50"] for row in rows if row["ap50"] is not None]
+        result["ap50_95"] = float(np.mean(aps)) if aps else None
+        per_class[class_id] = result
+    ap50 = [result["ap50"] for result in per_class.values() if result["ap50"] is not None]
+    ap50_95 = [result["ap50_95"] for result in per_class.values() if result["ap50_95"] is not None]
+    return {"per_class": per_class, "map50": float(np.mean(ap50)) if ap50 else None,
+            "map50_95": float(np.mean(ap50_95)) if ap50_95 else None}
+
+
 def mask_metrics(ground_truth, predicted):
     """Compute per-class pixel counts and micro-overlap across images.
 

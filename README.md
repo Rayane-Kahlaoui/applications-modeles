@@ -14,8 +14,27 @@ py -3.13 -m venv .venv
 
 You can also run `.\.venv\Scripts\python.exe` directly without activation.
 Install data-preparation dependencies and prepare the dataset using the
-[DataPrep instructions](DataPrep/README.md). Install the detector's CPU
-dependencies with `python -m pip install -r requirements-training.txt`.
+[DataPrep instructions](DataPrep/README.md). Install the project dependencies with:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Double-click [start_mlflow.bat](start_mlflow.bat), or run it from the project
+root, then open http://127.0.0.1:5000. Keep the window open while using MLflow
+and press Ctrl+C to stop it. The interface compares recorded runs. Training
+scripts launch experiments and choose their parameters. See the
+[MLflow guide](projet/mlops/README.md) for integration and an example.
+
+Reusable augmentation is under [preprocessing](projet/preprocessing/),
+experiment tracking is under [mlops](projet/mlops/), future model training
+belongs in [training](projet/training/), and checks are in [tests](projet/tests/).
+Run the checks from the project root with
+`.\.venv\Scripts\python.exe -m unittest discover -s projet/tests -t .`.
+The [preprocessing guide](projet/preprocessing/README.md) describes the
+manifest-based loader and train-only augmentation.
+The [training guide](projet/training/README.md) describes the first binary
+baseline experiments and their evaluation boundaries.
 
 `DataPrep/` contains preparation code, the fixed split and the study evidence
 log. The generated dataset lives under `donnees/severstal/` and is excluded from

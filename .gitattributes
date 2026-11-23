@@ -1,0 +1,2 @@
+projet/artifacts/baselines/**/*.joblib filter=lfs diff=lfs merge=lfs -text
+projet/artifacts/baselines/**/*.pth filter=lfs diff=lfs merge=lfs -text

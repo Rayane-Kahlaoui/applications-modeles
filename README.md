@@ -13,12 +13,15 @@ py -3.13 -m venv .venv
 ```
 
 You can also run `.\.venv\Scripts\python.exe` directly without activation.
-Install data-preparation dependencies and prepare the dataset using the
-[DataPrep instructions](DataPrep/README.md). Install the project dependencies with:
+Install the project dependencies, then prepare the dataset using the
+[DataPrep instructions](DataPrep/README.md):
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
+
+The requirements capture the observed Windows Python 3.13 environment, including
+transitive packages. A clean installation has not yet been verified.
 
 Double-click [start_mlflow.bat](start_mlflow.bat), or run it from the project
 root, then open http://127.0.0.1:5000. Keep the window open while using MLflow

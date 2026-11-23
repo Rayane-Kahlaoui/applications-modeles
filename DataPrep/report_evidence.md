@@ -98,6 +98,24 @@ capacity and simulated outcomes, CPU timing boundaries and hardware, final test
 results, limitations, monitoring plan and deployment recommendation as those
 activities occur. Keep validation decisions separate from final test results.
 
+## Evaluation assumptions
+
+The owner selected a hypothetical 10:1 missed-defect to false-alert cost and
+an operator rate of 10–15 images per minute at 75–85% utilization. The baseline
+simulation uses 12 images per minute, five seconds per image and 80% utilization
+(9.6 effective per minute, conservatively rounded to nine per 60-frame window).
+The cost-derived 0.091 threshold assumes a calibrated binary posterior and the
+same decision unit as the costs. Box score thresholds are selected on validation.
+The initial protocol and its scope are in `projet/evaluation_protocol.md`.
+Literature, mathematical assumptions, model proposals and outstanding choices
+are documented in `projet/study_decisions.md`.
+The threshold sweep processes detections in descending score order and was
+checked against independent per-threshold matching on artificial examples,
+including 100 seeded synthetic cases with tied scores. Seven evaluator fixture
+tests passed. Mask
+overlap is accumulated per image to avoid retaining the whole dataset in memory.
+These are fixture checks; no model results are available yet.
+
 ## AI assistance
 
 Codex assisted with project planning, dataset research, repository and data

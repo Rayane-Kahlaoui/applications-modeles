@@ -156,8 +156,7 @@ def run(method, train, validation, args):
         (output / "results.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
         mlflow.log_artifacts(str(output))
         mlflow.log_artifact(__file__, artifact_path="source")
-        for name in ("requirements.txt", "requirements-training.txt"):
-            mlflow.log_artifact(str(Path(__file__).resolve().parents[2] / name), artifact_path="source")
+        mlflow.log_artifact(str(Path(__file__).resolve().parents[2] / "requirements.txt"), artifact_path="source")
         print(f"{method}: {metrics}", flush=True)
 
 

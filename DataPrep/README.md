@@ -3,10 +3,10 @@
 Study decisions, checks and limitations are recorded in `report_evidence.md`.
 
 Run commands from the project root in PowerShell. Create the Python environment
-as described in the root README, then install the data preparation packages:
+as described in the root README, then install the project packages:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r DataPrep/requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 Sign in to Kaggle and accept the competition rules on the
@@ -75,9 +75,9 @@ the source data using these commands and the tracked manifest.
 
 The Ultralytics 8.4.216 detector loader scanned all 10,050 training images and
 loaded a batch successfully. Install its CPU dependencies from the project root
-with `.\.venv\Scripts\python.exe -m pip install -r requirements-training.txt`.
-The full transitive environment is not locked yet. Use the test list only in the
-approved final evaluation.
+with `.\.venv\Scripts\python.exe -m pip install -r requirements.txt`.
+The recorded environment has not yet been verified through a clean install. Use
+the test list only in the approved final evaluation.
 
 The individual class masks can be read as four binary channels, treating a
 missing image/class mask as all zeros. A small PyTorch smoke test verified this

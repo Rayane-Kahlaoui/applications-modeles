@@ -198,6 +198,173 @@ experiments. Fit times were 34.6 seconds and 2.3 seconds respectively, excluding
 feature extraction and input loading. CPU memory, thread settings and full
 end-to-end deployment boundaries require controlled measurement later.
 
+## Image-level CNN comparison
+
+### Scratch CNN and synthetic condition checks
+
+The user requested a custom model from scratch without fine-tuning pretrained
+backbones. A four-block CNN with average and maximum pooling, AdamW and training
+augmentation was trained on 9,045 of the 10,050 training images. The remaining
+1,005 training images selected the checkpoint by average precision. Eight epochs
+were run, and epoch 8 had the best training-holdout AP of 0.9474. Loading and
+caching took 75.0 seconds, and training with holdout evaluation took 768.5
+seconds on CPU. The same training pool and same validation IDs were verified
+against the forest run. The CNN's gradient-update set is smaller than the forest's
+full training set due to its training-only checkpoint holdout.
+
+At the threshold selected on 626 tuning images, the same 626 comparison images
+gave 328 TP, 133 FP, 3 FN and 162 TN, AP 0.957 and cost/image 0.260 under the
+hypothetical image-level 10:1 cost. All 11 comparison images containing class 2
+were flagged, which is image-level recall, not defect-type identification. The
+earlier Random Forest had 324 TP, 86 FP and 7 FN at cost/image 0.249. The
+comparison data has been examined repeatedly and the final test remains sealed.
+
+For the CNN, fixed-threshold stress tests on the same comparison images gave:
+
+| Condition | TP | FP | FN | TN | AP | Cost/image |
+|---|---:|---:|---:|---:|---:|---:|
+| Original | 328 | 133 | 3 | 162 | 0.957 | 0.260 |
+| Darker, multiplier 0.75 | 327 | 139 | 4 | 156 | 0.953 | 0.286 |
+| Brighter, multiplier 1.25 | 325 | 138 | 6 | 157 | 0.952 | 0.316 |
+| Gaussian noise, std 8/255 | 320 | 119 | 11 | 176 | 0.920 | 0.366 |
+| Gaussian blur, sigma 1 | 330 | 196 | 1 | 99 | 0.932 | 0.329 |
+
+These are illustrative transforms applied after resize, not measurements of an
+actual factory line. Blur caused 63 additional false alerts relative to the
+original images, and the noise scenario increased misses by eight. A four-thread
+CPU timing pass on the same 100 decoded comparison images as prior models gave
+median 3.3 ms and p95 4.0 ms through preprocessing and scoring, excluding disk.
+It is exploratory rather than a complete deployment benchmark. Caching and
+training together took about 14 minutes, before other replay work. A complete
+clean-clone replay has not been timed; saved weights can avoid retraining.
+
+### Training-only Random Forest search
+
+Eight Random Forest hyperparameter combinations were evaluated using seeded,
+binary-stratified three-fold cross-validation on the training images only.
+The selection metric was mean average precision. The selected configuration
+used 150 trees, leaf size 1, `sqrt` feature sampling, unlimited depth and
+`balanced_subsample` class weights. Its mean training-fold AP was 0.9481.
+After refitting on all 10,050 training images, the image-cost threshold was
+chosen on the same 626 validation tuning images used previously, then applied
+to the same 626 comparison images. It achieved comparison AP 0.9638, 326 TP,
+124 FP, 5 FN and 171 TN, yielding 0.278 cost/image under the hypothetical 10:1
+image costs. The earlier 300-tree forest had 324 TP, 86 FP, 7 FN and 209 TN,
+with 0.249 cost/image. The training-fold search did not improve false alerts
+on this repeatedly examined comparison subset. The test remains unopened.
+
+### Threshold trade-off from saved validation scores
+
+The highest score threshold achieving each target image-level recall was chosen
+on the 331 positive tuning images and applied to the separate comparison portion
+of 331 positive and 295 negative images. For the 300-tree Random Forest, a 99%
+tuning-recall target gave 326 TP, 108 FP, 5 FN and 187 TN on comparison. A 98%
+target gave 323 TP, 77 FP, 8 FN and 218 TN. A 95% target gave 306 TP, 48 FP,
+25 FN and 247 TN. These targets are achieved on tuning; observed recall differs
+on comparison. At the original 10:1 cost-selected threshold the same forest had
+324 TP, 86 FP, 7 FN and 209 TN. For the 95% target, eliminating 38 false alerts
+while adding 18 misses increases hypothetical 10:1 cost from 156 to 298 on
+these 626 images. This analysis reused the comparison portion and is exploratory.
+Results are image-level and the target does not guarantee rare-class recall.
+The held-out test remains unopened.
+
+The owner selected a Random Forest reference and two pretrained CNNs. The
+professor's Day 1 vision/transfer-learning course names EfficientNet-B0 and
+ResNet-18 and compares pretrained feature extraction. MobileNetV3-Small was
+chosen as the smaller second CNN. This is a binary image-alert experiment.
+
+The forest is the earlier 300-tree, leaf-size-1 configuration. Both CNNs use
+frozen ImageNet-1k weights and a standardized class-balanced logistic regression
+head fitted on the training data. Grayscale images are resized to 256 by 64,
+repeated into three channels and ImageNet-normalized. This uses the full image
+and differs from the original ImageNet preprocessing. All three used exactly
+the same 10,050 training IDs, 626 validation tuning IDs and 626 validation
+comparison IDs, verified from their recorded results. Thresholds minimize the
+hypothetical 10:1 image cost on tuning. Comparison metrics use fixed thresholds.
+
+| Model | Tuning cost | Comparison AP | ROC AUC | TP | FP | FN | TN | Comparison cost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Random Forest | 0.224 | 0.964 | 0.960 | 324 | 86 | 7 | 209 | 0.249 |
+| MobileNetV3-Small | 0.220 | 0.954 | 0.951 | 327 | 129 | 4 | 166 | 0.270 |
+| EfficientNet-B0 | 0.316 | 0.938 | 0.942 | 329 | 164 | 2 | 131 | 0.294 |
+
+Each model alerted on all 11 comparison images containing class 2. This is
+image-level alert recall, including multi-class images, not type recognition.
+The comparison portion has been examined repeatedly. A single seed and the
+unavailable production-run grouping limit conclusions. Test remains unopened.
+
+An exploratory CPU timing pass used the same first 100 comparison images, five
+warm-up predictions and four configured threads. Median/p95 decoded-grayscale
+image-to-score times were 49.8/60.4 ms for the forest, 7.4/9.2 ms for MobileNet,
+and 20.3/24.5 ms for EfficientNet on an AMD Ryzen 7 4800H. Disk loading is
+excluded. These measurements are not an isolated end-to-end factory benchmark.
+Training image loading and frozen feature extraction took 87.6 seconds for
+MobileNet and 157.3 seconds for EfficientNet; head fitting took 0.73 and 1.53
+seconds respectively. The forest's original full-split run used the same data
+but recorded feature extraction and fit times separately in MLflow. CNN weights,
+hashes, source, fitted heads, IDs and scores are retained as local artifacts.
+
+### Expanded image-level comparison for the report
+
+The following values are calculated from the recorded comparison confusion
+matrices. The common comparison subset contains 626 images, with 331 annotated
+defective and 295 without annotated defects. Each threshold was selected on the
+separate 626-image tuning subset using a false-negative cost of 10 and a
+false-positive cost of 1. Cost per image is `(10 * FN + FP) / 626`.
+
+| Model | TP | FP | FN | TN | Recall | Precision | Specificity | False-alert rate | F1 | Accuracy | AP | Cost/image |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Extra Trees, 300 trees, leaf 1 | 326 | 81 | 5 | 214 | 98.5% | 80.1% | 72.5% | 27.5% | 88.3% | 86.3% | 97.0% | 0.209 |
+| Random Forest, 300 trees, leaf 1 | 324 | 86 | 7 | 209 | 97.9% | 79.0% | 70.8% | 29.2% | 87.4% | 85.1% | 96.4% | 0.249 |
+| MobileNetV3-Small, frozen | 327 | 129 | 4 | 166 | 98.8% | 71.7% | 56.3% | 43.7% | 83.1% | 78.8% | 95.4% | 0.270 |
+| EfficientNet-B0, frozen | 329 | 164 | 2 | 131 | 99.4% | 66.7% | 44.4% | 55.6% | 79.9% | 73.5% | 93.8% | 0.294 |
+
+Recall is TP/(TP+FN), precision is TP/(TP+FP), specificity is TN/(TN+FP),
+false-alert rate is FP/(FP+TN), F1 is 2TP/(2TP+FP+FN), and accuracy is
+(TP+TN)/626. AP summarizes the precision-recall curve across thresholds. The
+other confusion-matrix metrics use the fixed tuning-selected threshold. The
+observed precision and workload depend on prevalence. These are binary image
+alerts and do not measure localization or class identification.
+
+Across all recorded candidates, the four lowest comparison costs were Extra
+Trees at 0.209, histogram gradient boosting at 0.230 (326 TP, 94 FP, 5 FN,
+201 TN, AP 0.972), Random Forest at 0.249, and histogram gradient boosting
+with multiscale features at 0.252 (325 TP, 98 FP, 6 FN, 197 TN, AP 0.974).
+The scratch CNN followed with 328 TP, 133 FP, 3 FN, 162 TN, AP 0.957 and
+cost/image 0.260. These are candidate-run rankings, including two feature
+variants of gradient boosting. The binary experiment outputs and predictions
+are retained in the local ignored `.cache/binary-tuning-v1/`,
+`.cache/multiscale-binary-v1/`, `.cache/mobilenet-binary-v1/`,
+`.cache/efficientnet-binary-v1/` and `.cache/custom-cnn-v1/` directories.
+
+The same comparison subset has informed multiple experiments, so its ranking
+is exploratory. Final test data remains unopened. CPU timings above exclude
+disk loading, and a comparable Extra Trees timing is not recorded here.
+
+### References and candidates selected for fine-tuning
+
+Keep Extra Trees as the primary non-deep-learning image-alert reference because
+it achieved the lowest observed comparison cost, 0.209 per image, with 81 false
+alerts and five misses. Retain the previously selected Random Forest as an
+additional classical reference, with 86 false alerts, seven misses and cost
+0.249. Both remain subject to the limitations of repeated validation use.
+
+Fine-tune MobileNetV3-Small first, motivated by its 327/331 comparison recall
+and 7.4 ms median CPU decoded-image-to-score time, then investigate
+EfficientNet-B0, which missed two comparison images and had a 20.3 ms median.
+Their frozen-feature runs remain references for measuring fine-tuning gains
+and losses. MobileNet and EfficientNet produced 129 and 164 false alerts,
+respectively, so fine-tuning must be measured rather than assumed to help.
+
+Histogram gradient boosting and its multiscale variant remain documented
+exploratory comparisons. Their costs of 0.230 and 0.252 exceeded Extra Trees,
+although the multiscale variant had AP 0.974. The scratch CNN remains a
+documented exploratory comparison, with three misses, 133 false alerts and
+cost 0.260. The cross-validated forest and multiscale Extra Trees variants also
+remain documented, at costs 0.278 and 0.264 respectively. These selections are
+for binary image alerts and do not establish localization, type recognition,
+rare-class performance or a final production model. The test remains unopened.
+
 ## Rubric and remaining evidence
 
 ### Binary baseline tuning experiment
@@ -245,6 +412,48 @@ recall was 232/977 (0.237), AP50 was 0.00625, and the fixed threshold gave
 boxes. The proposal and training strategy therefore remains inadequate. The
 comparison portion has now been examined and remains validation data. Only 500
 training images were used in this detector experiment; the test is unopened.
+
+### Multiscale image-level features
+
+An additional feature representation preserves the source aspect ratio at
+512 by 82 and uses local mean and standard deviation of intensity, gradient and
+local contrast at two spatial scales, plus an intensity histogram. It was
+evaluated on the same 10,050 training and 626/626 validation partitions.
+With Extra Trees, tuning cost was 0.212 and comparison cost was 0.264 per image,
+with 326 TP, 115 FP, 5 FN and 180 TN. Comparison AP was 0.964. The earlier
+feature representation gave tuning cost 0.184 and comparison cost 0.209, with
+326 TP, 81 FP, 5 FN and 214 TN. Multiscale Extra Trees alerted on 10 of 11
+comparison images containing class 2, compared with 11 of 11 previously.
+
+The histogram-gradient-boosting variant with the new features had tuning cost
+0.219 and comparison cost 0.252, with 325 TP, 98 FP, 6 FN and 197 TN. It had
+comparison AP 0.974. Neither multiscale variant improved on the earlier Extra
+Trees operating cost on these partitions. These are repeated validation
+experiments, and only the test split remains sealed.
+
+### Pretrained detection pilot
+
+YOLO11n initialized from the official Ultralytics pretrained weights was tested
+on CPU using exactly the same 500 training and 100 validation tuning images as
+the hard-negative classical region detector. Initial weights SHA-256 was
+`0ebbc80d4a7680d14987a577cd21342b65ecfd94632bd9a8da63ae6417644ee1`.
+The image size was 320 and Ultralytics training defaults, including its own
+augmentation settings, were used. A one-epoch run gave AP50 0.00740. A separate
+five-epoch run gave tuning AP50 0.03455, 16 TP, 57 FP and 120 FN at the
+threshold selected on those same images. Training took 249 seconds on the local
+CPU, including framework training and validation. The short pilots are not
+comparable controlled training-time benchmarks.
+
+With the five-epoch checkpoint and tuning-selected threshold fixed, evaluation
+on the same 626 comparison images as the classical detector gave AP50 0.02754,
+108 TP, 380 FP and 869 FN. It detected zero of the 15 class-2 reference boxes.
+The classical hard-negative detector had AP50 0.00625, 16 TP, 306 FP and 961 FN
+on those images. Both used 500 training images, but their preprocessing and
+augmentation differ. The checkpoint was selected using the tuning images. These
+are validation comparisons and have been inspected repeatedly, and the models
+remain weak at localization. The test split remains unopened. Ultralytics lists
+YOLO11 under AGPL-3.0 and enterprise licenses; assess licensing before use beyond
+this study. Official model documentation: https://docs.ultralytics.com/models/yolo11
 
 The professor requires a carefully tuned non-deep-learning reference and fair
 comparisons on the same data and task, validation/test separation for the full

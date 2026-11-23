@@ -26,6 +26,19 @@ from projet.timing import benchmark_inference
 
 def extract_features(image, method):
     """Resize the complete source image consistently, then compute features."""
+    if method == "texture-multiscale":
+        resized = cv2.resize(image, (512, 82), interpolation=cv2.INTER_AREA)
+        gray = resized.astype(np.float32) / 255
+        gradient = cv2.magnitude(cv2.Sobel(gray, cv2.CV_32F, 1, 0), cv2.Sobel(gray, cv2.CV_32F, 0, 1))
+        contrast = cv2.absdiff(gray, cv2.GaussianBlur(gray, (0, 0), 3))
+        features = []
+        for values in (gray, gradient, contrast):
+            for size in ((32, 8), (64, 8)):
+                mean = cv2.resize(values, size, interpolation=cv2.INTER_AREA)
+                squared = cv2.resize(values * values, size, interpolation=cv2.INTER_AREA)
+                features.extend((mean.ravel(), np.sqrt(np.maximum(squared - mean * mean, 0)).ravel()))
+        histogram = cv2.calcHist([resized], [0], None, [32], [0, 256]).reshape(-1) / resized.size
+        return np.concatenate((*features, histogram))
     resized = cv2.resize(image, (256, 64), interpolation=cv2.INTER_AREA)
     if method == "hog-sgd-svm":
         return hog(resized, orientations=9, pixels_per_cell=(8, 8), cells_per_block=(2, 2))

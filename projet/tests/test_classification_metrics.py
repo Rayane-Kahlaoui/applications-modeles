@@ -2,11 +2,19 @@
 
 import unittest
 
-from projet.classification_metrics import binary_metrics
+from projet.classification_metrics import binary_metrics, threshold_for_recall
 from projet.timing import benchmark_inference
 
 
 class ClassificationMetricsTest(unittest.TestCase):
+    def test_recall_target_threshold_with_ties(self):
+        labels = [1, 1, 1, 0]
+        scores = [0.2, 0.5, 0.5, 0.8]
+        self.assertEqual(threshold_for_recall(labels, scores, 2 / 3), 0.5)
+        self.assertEqual(threshold_for_recall(labels, scores, 1), 0.2)
+        with self.assertRaises(ValueError):
+            threshold_for_recall([0], [0.2], 0.95)
+
     def test_counts_and_undefined_curves(self):
         result = binary_metrics([1, 1, 0, 0], [0.9, 0.1, 0.8, 0.2], 0.5)
         self.assertEqual((result["tp"], result["fp"], result["fn"], result["tn"]), (1, 1, 1, 1))

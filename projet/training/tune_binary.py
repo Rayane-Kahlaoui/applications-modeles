@@ -12,7 +12,7 @@ import mlflow
 import numpy as np
 import sklearn
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier, RandomForestClassifier
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, train_test_split
 
 from projet.classification_metrics import binary_metrics
 from projet.mlops.tracking import start_run
@@ -31,14 +31,15 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--methods", nargs="+", choices=("forest-150-leaf2", "forest-300-leaf1",
-                        "extra-trees-300-leaf1", "hist-gradient-boosting"))
+                        "extra-trees-300-leaf1", "hist-gradient-boosting", "forest-cv"))
     parser.add_argument("--comparison-fraction", type=float, default=0.5)
+    parser.add_argument("--features", choices=("texture-forest", "texture-multiscale"), default="texture-forest")
     args = parser.parse_args()
     if args.output.exists() or args.seed < 0 or not 0 < args.comparison_fraction < 1:
         parser.error("Output must be new, seed nonnegative, and comparison fraction between 0 and 1")
     train, validation = SeverstalDataset("train"), SeverstalDataset("validation")
-    train_x, train_y, train_ids, _, train_extract_seconds = extract_split(train, "texture-forest", len(train), args.seed)
-    valid_x, valid_y, valid_ids, classes, valid_extract_seconds = extract_split(validation, "texture-forest", len(validation), args.seed)
+    train_x, train_y, train_ids, _, train_extract_seconds = extract_split(train, args.features, len(train), args.seed)
+    valid_x, valid_y, valid_ids, classes, valid_extract_seconds = extract_split(validation, args.features, len(validation), args.seed)
     tune, comparison = train_test_split(np.arange(len(valid_y)), test_size=args.comparison_fraction,
                                         random_state=args.seed, stratify=valid_y)
     methods = {
@@ -50,15 +51,24 @@ def main():
             class_weight="balanced", random_state=args.seed, n_jobs=-1),
         "hist-gradient-boosting": HistGradientBoostingClassifier(max_iter=150, learning_rate=0.1,
             max_leaf_nodes=31, l2_regularization=1, random_state=args.seed),
+        "forest-cv": RandomizedSearchCV(
+            RandomForestClassifier(n_estimators=150, random_state=args.seed, n_jobs=-1),
+            {"max_features": ["sqrt", 0.2, 0.5], "min_samples_leaf": [1, 2, 4],
+             "max_depth": [None, 16, 32], "class_weight": ["balanced", "balanced_subsample", None]},
+            n_iter=8, scoring="average_precision", cv=StratifiedKFold(3, shuffle=True, random_state=args.seed),
+            random_state=args.seed, n_jobs=1, refit=True, error_score="raise"),
     }
     args.output.mkdir(parents=True)
     for name in args.methods or methods:
         model = methods[name]
-        with start_run(name, phase="binary-validation-tuning", seed=args.seed,
+        with start_run(f"{name}-{args.features}", phase="binary-validation-tuning", seed=args.seed,
                        description="Threshold tuned on one validation half; other half reported separately.") as run:
             params = model.get_params()
+            if name == "forest-cv":
+                params = {"search": "RandomizedSearchCV", "iterations": 8, "folds": 3,
+                          "selection_metric": "average_precision", "trees": 150}
             mlflow.log_params({"estimator": type(model).__name__, "model_settings": json.dumps(params, sort_keys=True),
-                               "features": "spatial intensity, gradient, intensity histogram at 256x64",
+                               "features": args.features,
                                "train_count": len(train_ids), "tune_count": len(tune),
                                "comparison_count": len(comparison), "comparison_fraction": args.comparison_fraction,
                                "miss_cost": 10, "false_alert_cost": 1,
@@ -68,6 +78,9 @@ def main():
             start = time.perf_counter()
             model.fit(train_x, train_y)
             fit_seconds = time.perf_counter() - start
+            if name == "forest-cv":
+                mlflow.log_params({"best_parameters": json.dumps(model.best_params_, sort_keys=True)})
+                mlflow.log_metric("training_cv_average_precision", model.best_score_)
             scores = model.predict_proba(valid_x)[:, 1]
             threshold = choose_threshold(valid_y[tune], scores[tune])
             tune_metrics = metrics_for(valid_y[tune], scores[tune], threshold)

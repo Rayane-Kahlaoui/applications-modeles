@@ -1,0 +1,6 @@
+-r requirements-training.txt
+mlflow==3.18.0
+opencv-python==5.1.0.95
+scikit-learn==1.9.1
+scikit-image==0.26.0
+joblib==1.6.0

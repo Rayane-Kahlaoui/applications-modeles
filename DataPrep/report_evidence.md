@@ -114,10 +114,367 @@ checked against independent per-threshold matching on artificial examples,
 including 100 seeded synthetic cases with tied scores. Seven evaluator fixture
 tests passed. Mask
 overlap is accumulated per image to avoid retaining the whole dataset in memory.
-These are fixture checks; no model results are available yet.
+These are fixture checks.
+
+## Classical pilot
+
+The owner selected Severstal as the sole study dataset. The assignment names
+NEU-DET and its shared split, so instructor acceptance of this choice remains
+unverified.
+
+On the `model/classical` branch, an exploratory Severstal HOG/linear-SVM pilot
+used 500 train and 30 validation images, seed 0. The initial random validation
+sample had no instances of classes 1 or 2. The selected grid configuration was
+C=1, contrast cutoff 25 and minimum area 60. Candidate recall was 6/27 at IoU
+0.5. At the threshold selected on this same validation sample, TP=1, FP=9 and
+FN=26, yielding 8.97 cost units per image under the hypothetical 10:1 costs.
+This is preliminary and cannot establish generalization or rare-class recall.
+No held-out test data was used. The pilot code was removed at the owner's
+request, while its recorded local results and selected model remain in the cache.
+
+Simulated validation lighting, noise, rotation and blur were assessed on the
+same 30 images and selected threshold. Their ranges are illustrative, without
+measurements from a factory line. The full-image augmentation helper transforms
+boxes and masks but has not been connected to detector training. See
+`../projet/mlops/README.md` for MLflow commands. MLflow stores experiment
+metadata and artifacts locally in ignored `.cache/mlflow/`. The pilot import
+is marked retrospective and its exact training-code snapshot is unavailable.
+Future training scripts must explicitly log their experiment evidence.
+
+The Severstal loader now reads the fixed manifest, class masks and derived boxes,
+with deterministic train-only augmentation. A smoke check loaded representative
+training and validation examples for each of the four classes and clean images.
+This does not validate every dataset entry. Image-level binary metrics, detection
+AP summaries and a callable-based inference timing helper are available for
+experiments.
+
+### Initial classical comparisons
+
+On a seeded 500-training-image, 200-validation-image pilot, HOG with a linear
+SVM achieved image-level AP 0.817 and ROC AUC 0.759. Spatial intensity and
+gradient features with a random forest achieved AP 0.895 and ROC AUC 0.856.
+At image-level thresholds chosen on that same validation sample using the
+hypothetical 10:1 cost, the SVM produced 109 TP, 89 FP, 0 FN and 2 TN. The
+forest produced 108 TP, 67 FP, 1 FN and 24 TN. These figures are exploratory,
+use a relatively small sample and the thresholds are chosen on the same data.
+The scores and sampled IDs are preserved in the local MLflow artifacts.
+
+A separate region-proposal detector pilot used 500 training and 100 validation
+images with three contrast/area configurations: (25,60), (15,20), (35,20).
+At IoU 0.5, proposal recall was respectively 36/142, 20/142 and 25/142. The
+corresponding AP50 values were approximately 0.0023, 0.0010 and 0.0004. These
+figures are poor, based on a small sample, and do not establish deployment
+performance. Full predictions, data IDs and settings are retained in MLflow.
+Concurrent jobs ran during these pilots, making timing unsuitable for comparing
+models. No held-out test data was used.
+
+### Full-split image-level comparisons
+
+The original full-data LinearSVC run was stopped after more than ten minutes
+in fitting and marked killed in MLflow. A new run used a stochastic linear SVM
+with hinge loss, balanced class weights, alpha 0.0001 and averaged SGD. Both
+methods used all 10,050 training and 1,252 validation images, seed 0, original
+images without augmentation and the same sampled ordering. The test split was
+not opened. Scores, IDs, selected thresholds, settings and fitted models are in
+local MLflow. Thresholds and metrics were selected and reported on the same
+validation split, so the operating-point metrics are optimistically selected.
+
+| Method | AP | ROC AUC | TP | FP | FN | TN | Cost/image |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| HOG, stochastic linear SVM | 0.828 | 0.808 | 662 | 588 | 0 | 2 | 0.470 |
+| Spatial texture, random forest | 0.960 | 0.955 | 652 | 216 | 10 | 374 | 0.252 |
+
+The cost is the hypothetical image-level 10:1 miss-to-false-alert scenario.
+Both methods alerted on all 23 validation images containing class 2. This is
+image alert recall, not class identification recall, and such images can contain
+multiple classes. The source data has no production-run grouping, so the split
+does not establish performance on independent factory runs. Data prevalence can
+differ from deployment prevalence.
+
+The 50-image decoded-image-to-score timing sample had median/p95 of 5.7/6.2 ms
+for the HOG model and 40.5/56.9 ms for the forest. It excludes disk access and
+is not a controlled release benchmark. Other processes were running during the
+experiments. Fit times were 34.6 seconds and 2.3 seconds respectively, excluding
+feature extraction and input loading. CPU memory, thread settings and full
+end-to-end deployment boundaries require controlled measurement later.
+
+## Image-level CNN comparison
+
+### Scratch CNN and synthetic condition checks
+
+The user requested a custom model from scratch without fine-tuning pretrained
+backbones. A four-block CNN with average and maximum pooling, AdamW and training
+augmentation was trained on 9,045 of the 10,050 training images. The remaining
+1,005 training images selected the checkpoint by average precision. Eight epochs
+were run, and epoch 8 had the best training-holdout AP of 0.9474. Loading and
+caching took 75.0 seconds, and training with holdout evaluation took 768.5
+seconds on CPU. The same training pool and same validation IDs were verified
+against the forest run. The CNN's gradient-update set is smaller than the forest's
+full training set due to its training-only checkpoint holdout.
+
+At the threshold selected on 626 tuning images, the same 626 comparison images
+gave 328 TP, 133 FP, 3 FN and 162 TN, AP 0.957 and cost/image 0.260 under the
+hypothetical image-level 10:1 cost. All 11 comparison images containing class 2
+were flagged, which is image-level recall, not defect-type identification. The
+earlier Random Forest had 324 TP, 86 FP and 7 FN at cost/image 0.249. The
+comparison data has been examined repeatedly and the final test remains sealed.
+
+For the CNN, fixed-threshold stress tests on the same comparison images gave:
+
+| Condition | TP | FP | FN | TN | AP | Cost/image |
+|---|---:|---:|---:|---:|---:|---:|
+| Original | 328 | 133 | 3 | 162 | 0.957 | 0.260 |
+| Darker, multiplier 0.75 | 327 | 139 | 4 | 156 | 0.953 | 0.286 |
+| Brighter, multiplier 1.25 | 325 | 138 | 6 | 157 | 0.952 | 0.316 |
+| Gaussian noise, std 8/255 | 320 | 119 | 11 | 176 | 0.920 | 0.366 |
+| Gaussian blur, sigma 1 | 330 | 196 | 1 | 99 | 0.932 | 0.329 |
+
+These are illustrative transforms applied after resize, not measurements of an
+actual factory line. Blur caused 63 additional false alerts relative to the
+original images, and the noise scenario increased misses by eight. A four-thread
+CPU timing pass on the same 100 decoded comparison images as prior models gave
+median 3.3 ms and p95 4.0 ms through preprocessing and scoring, excluding disk.
+It is exploratory rather than a complete deployment benchmark. Caching and
+training together took about 14 minutes, before other replay work. A complete
+clean-clone replay has not been timed; saved weights can avoid retraining.
+
+### Training-only Random Forest search
+
+Eight Random Forest hyperparameter combinations were evaluated using seeded,
+binary-stratified three-fold cross-validation on the training images only.
+The selection metric was mean average precision. The selected configuration
+used 150 trees, leaf size 1, `sqrt` feature sampling, unlimited depth and
+`balanced_subsample` class weights. Its mean training-fold AP was 0.9481.
+After refitting on all 10,050 training images, the image-cost threshold was
+chosen on the same 626 validation tuning images used previously, then applied
+to the same 626 comparison images. It achieved comparison AP 0.9638, 326 TP,
+124 FP, 5 FN and 171 TN, yielding 0.278 cost/image under the hypothetical 10:1
+image costs. The earlier 300-tree forest had 324 TP, 86 FP, 7 FN and 209 TN,
+with 0.249 cost/image. The training-fold search did not improve false alerts
+on this repeatedly examined comparison subset. The test remains unopened.
+
+### Threshold trade-off from saved validation scores
+
+The highest score threshold achieving each target image-level recall was chosen
+on the 331 positive tuning images and applied to the separate comparison portion
+of 331 positive and 295 negative images. For the 300-tree Random Forest, a 99%
+tuning-recall target gave 326 TP, 108 FP, 5 FN and 187 TN on comparison. A 98%
+target gave 323 TP, 77 FP, 8 FN and 218 TN. A 95% target gave 306 TP, 48 FP,
+25 FN and 247 TN. These targets are achieved on tuning; observed recall differs
+on comparison. At the original 10:1 cost-selected threshold the same forest had
+324 TP, 86 FP, 7 FN and 209 TN. For the 95% target, eliminating 38 false alerts
+while adding 18 misses increases hypothetical 10:1 cost from 156 to 298 on
+these 626 images. This analysis reused the comparison portion and is exploratory.
+Results are image-level and the target does not guarantee rare-class recall.
+The held-out test remains unopened.
+
+The owner selected a Random Forest reference and two pretrained CNNs. The
+professor's Day 1 vision/transfer-learning course names EfficientNet-B0 and
+ResNet-18 and compares pretrained feature extraction. MobileNetV3-Small was
+chosen as the smaller second CNN. This is a binary image-alert experiment.
+
+The forest is the earlier 300-tree, leaf-size-1 configuration. Both CNNs use
+frozen ImageNet-1k weights and a standardized class-balanced logistic regression
+head fitted on the training data. Grayscale images are resized to 256 by 64,
+repeated into three channels and ImageNet-normalized. This uses the full image
+and differs from the original ImageNet preprocessing. All three used exactly
+the same 10,050 training IDs, 626 validation tuning IDs and 626 validation
+comparison IDs, verified from their recorded results. Thresholds minimize the
+hypothetical 10:1 image cost on tuning. Comparison metrics use fixed thresholds.
+
+| Model | Tuning cost | Comparison AP | ROC AUC | TP | FP | FN | TN | Comparison cost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Random Forest | 0.224 | 0.964 | 0.960 | 324 | 86 | 7 | 209 | 0.249 |
+| MobileNetV3-Small | 0.220 | 0.954 | 0.951 | 327 | 129 | 4 | 166 | 0.270 |
+| EfficientNet-B0 | 0.316 | 0.938 | 0.942 | 329 | 164 | 2 | 131 | 0.294 |
+
+Each model alerted on all 11 comparison images containing class 2. This is
+image-level alert recall, including multi-class images, not type recognition.
+The comparison portion has been examined repeatedly. A single seed and the
+unavailable production-run grouping limit conclusions. Test remains unopened.
+
+An exploratory CPU timing pass used the same first 100 comparison images, five
+warm-up predictions and four configured threads. Median/p95 decoded-grayscale
+image-to-score times were 49.8/60.4 ms for the forest, 7.4/9.2 ms for MobileNet,
+and 20.3/24.5 ms for EfficientNet on an AMD Ryzen 7 4800H. Disk loading is
+excluded. These measurements are not an isolated end-to-end factory benchmark.
+Training image loading and frozen feature extraction took 87.6 seconds for
+MobileNet and 157.3 seconds for EfficientNet; head fitting took 0.73 and 1.53
+seconds respectively. The forest's original full-split run used the same data
+but recorded feature extraction and fit times separately in MLflow. CNN weights,
+hashes, source, fitted heads, IDs and scores are retained as local artifacts.
+
+### Expanded image-level comparison for the report
+
+The following values are calculated from the recorded comparison confusion
+matrices. The common comparison subset contains 626 images, with 331 annotated
+defective and 295 without annotated defects. Each threshold was selected on the
+separate 626-image tuning subset using a false-negative cost of 10 and a
+false-positive cost of 1. Cost per image is `(10 * FN + FP) / 626`.
+
+| Model | TP | FP | FN | TN | Recall | Precision | Specificity | False-alert rate | F1 | Accuracy | AP | Cost/image |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Extra Trees, 300 trees, leaf 1 | 326 | 81 | 5 | 214 | 98.5% | 80.1% | 72.5% | 27.5% | 88.3% | 86.3% | 97.0% | 0.209 |
+| Random Forest, 300 trees, leaf 1 | 324 | 86 | 7 | 209 | 97.9% | 79.0% | 70.8% | 29.2% | 87.4% | 85.1% | 96.4% | 0.249 |
+| MobileNetV3-Small, frozen | 327 | 129 | 4 | 166 | 98.8% | 71.7% | 56.3% | 43.7% | 83.1% | 78.8% | 95.4% | 0.270 |
+| EfficientNet-B0, frozen | 329 | 164 | 2 | 131 | 99.4% | 66.7% | 44.4% | 55.6% | 79.9% | 73.5% | 93.8% | 0.294 |
+
+Recall is TP/(TP+FN), precision is TP/(TP+FP), specificity is TN/(TN+FP),
+false-alert rate is FP/(FP+TN), F1 is 2TP/(2TP+FP+FN), and accuracy is
+(TP+TN)/626. AP summarizes the precision-recall curve across thresholds. The
+other confusion-matrix metrics use the fixed tuning-selected threshold. The
+observed precision and workload depend on prevalence. These are binary image
+alerts and do not measure localization or class identification.
+
+Across all recorded candidates, the four lowest comparison costs were Extra
+Trees at 0.209, histogram gradient boosting at 0.230 (326 TP, 94 FP, 5 FN,
+201 TN, AP 0.972), Random Forest at 0.249, and histogram gradient boosting
+with multiscale features at 0.252 (325 TP, 98 FP, 6 FN, 197 TN, AP 0.974).
+The scratch CNN followed with 328 TP, 133 FP, 3 FN, 162 TN, AP 0.957 and
+cost/image 0.260. These are candidate-run rankings, including two feature
+variants of gradient boosting. The binary experiment outputs and predictions
+are retained in the local ignored `.cache/binary-tuning-v1/`,
+`.cache/multiscale-binary-v1/`, `.cache/mobilenet-binary-v1/`,
+`.cache/efficientnet-binary-v1/` and `.cache/custom-cnn-v1/` directories.
+
+The same comparison subset has informed multiple experiments, so its ranking
+is exploratory. Final test data remains unopened. CPU timings above exclude
+disk loading, and a comparable Extra Trees timing is not recorded here.
+
+### References and candidates selected for fine-tuning
+
+Keep Extra Trees as the primary non-deep-learning image-alert reference because
+it achieved the lowest observed comparison cost, 0.209 per image, with 81 false
+alerts and five misses. Retain the previously selected Random Forest as an
+additional classical reference, with 86 false alerts, seven misses and cost
+0.249. Both remain subject to the limitations of repeated validation use.
+
+Fine-tune MobileNetV3-Small first, motivated by its 327/331 comparison recall
+and 7.4 ms median CPU decoded-image-to-score time, then investigate
+EfficientNet-B0, which missed two comparison images and had a 20.3 ms median.
+Their frozen-feature runs remain references for measuring fine-tuning gains
+and losses. MobileNet and EfficientNet produced 129 and 164 false alerts,
+respectively, so fine-tuning must be measured rather than assumed to help.
+
+Histogram gradient boosting and its multiscale variant remain documented
+exploratory comparisons. Their costs of 0.230 and 0.252 exceeded Extra Trees,
+although the multiscale variant had AP 0.974. The scratch CNN remains a
+documented exploratory comparison, with three misses, 133 false alerts and
+cost 0.260. The cross-validated forest and multiscale Extra Trees variants also
+remain documented, at costs 0.278 and 0.264 respectively. These selections are
+for binary image alerts and do not establish localization, type recognition,
+rare-class performance or a final production model. The test remains unopened.
+
+## Rubric and remaining evidence
+
+### Binary baseline tuning experiment
+
+The fixed validation split was divided into 626 tuning and 626 comparison
+images by a seeded, binary-stratified split. All four configurations trained on
+the same 10,050 training images and the same original spatial texture features.
+Thresholds were selected on tuning using the 10:1 image-level cost. The
+comparison results below use those fixed thresholds.
+
+| Model | Tuning cost/image | Comparison AP | Comparison TP | FP | FN | TN | Comparison cost/image |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Random forest, 150 trees, leaf 2 | 0.252 | 0.963 | 325 | 103 | 6 | 192 | 0.260 |
+| Random forest, 300 trees, leaf 1 | 0.224 | 0.964 | 324 | 86 | 7 | 209 | 0.249 |
+| Extra Trees, 300 trees, leaf 1 | 0.184 | 0.970 | 326 | 81 | 5 | 214 | 0.209 |
+| Histogram gradient boosting | 0.192 | 0.972 | 326 | 94 | 5 | 201 | 0.230 |
+
+The Extra Trees configuration had the lowest tuning cost and 22 fewer false
+alerts on the comparison portion than the 150-tree reference, with one fewer
+miss. Both alerted on all 11 comparison images containing class 2, which is an
+image-level outcome and does not establish class-identification performance.
+The model family and thresholds were explored on these validation portions,
+so repeated use limits their independence. The test split remains sealed. See
+`../projet/training/README.md` and MLflow for configurations and image IDs.
+
+The contrast-region proposal grid was evaluated on 100 tuning images. The
+original detector setting matched 40 of 136 annotated boxes at IoU 0.5; the
+best studied setting matched 46, with mean proposals increasing from 27.55 to
+67.55 per image. End-to-end evaluation on the same images showed AP50 0.00261
+for the original and 0.00156 for the altered proposals. Both cost-selected
+thresholds produced zero true positives. These remain exploratory results.
+
+On the same 100 tuning images and the improved proposal configuration, a
+stochastic SVM trained on reference crops and random background achieved
+AP50 0.00207 and zero TP at its tuned threshold. Adding matched proposals and
+hard background proposals during training increased tuning AP50 to 0.01381,
+with 8 TP, 56 FP and 128 FN at its validation-selected threshold. The altered
+sampling also changes the random background draws. A LinearSVC hard-negative
+fit was stopped after several minutes and marked killed in MLflow.
+
+The hard-negative SGD model and its fixed tuning threshold were re-created and
+evaluated on the separate 626-image validation comparison portion. Proposal
+recall was 232/977 (0.237), AP50 was 0.00625, and the fixed threshold gave
+16 TP, 306 FP and 961 FN. Class 2 had zero matched detections among 15 reference
+boxes. The proposal and training strategy therefore remains inadequate. The
+comparison portion has now been examined and remains validation data. Only 500
+training images were used in this detector experiment; the test is unopened.
+
+### Multiscale image-level features
+
+An additional feature representation preserves the source aspect ratio at
+512 by 82 and uses local mean and standard deviation of intensity, gradient and
+local contrast at two spatial scales, plus an intensity histogram. It was
+evaluated on the same 10,050 training and 626/626 validation partitions.
+With Extra Trees, tuning cost was 0.212 and comparison cost was 0.264 per image,
+with 326 TP, 115 FP, 5 FN and 180 TN. Comparison AP was 0.964. The earlier
+feature representation gave tuning cost 0.184 and comparison cost 0.209, with
+326 TP, 81 FP, 5 FN and 214 TN. Multiscale Extra Trees alerted on 10 of 11
+comparison images containing class 2, compared with 11 of 11 previously.
+
+The histogram-gradient-boosting variant with the new features had tuning cost
+0.219 and comparison cost 0.252, with 325 TP, 98 FP, 6 FN and 197 TN. It had
+comparison AP 0.974. Neither multiscale variant improved on the earlier Extra
+Trees operating cost on these partitions. These are repeated validation
+experiments, and only the test split remains sealed.
+
+### Pretrained detection pilot
+
+YOLO11n initialized from the official Ultralytics pretrained weights was tested
+on CPU using exactly the same 500 training and 100 validation tuning images as
+the hard-negative classical region detector. Initial weights SHA-256 was
+`0ebbc80d4a7680d14987a577cd21342b65ecfd94632bd9a8da63ae6417644ee1`.
+The image size was 320 and Ultralytics training defaults, including its own
+augmentation settings, were used. A one-epoch run gave AP50 0.00740. A separate
+five-epoch run gave tuning AP50 0.03455, 16 TP, 57 FP and 120 FN at the
+threshold selected on those same images. Training took 249 seconds on the local
+CPU, including framework training and validation. The short pilots are not
+comparable controlled training-time benchmarks.
+
+With the five-epoch checkpoint and tuning-selected threshold fixed, evaluation
+on the same 626 comparison images as the classical detector gave AP50 0.02754,
+108 TP, 380 FP and 869 FN. It detected zero of the 15 class-2 reference boxes.
+The classical hard-negative detector had AP50 0.00625, 16 TP, 306 FP and 961 FN
+on those images. Both used 500 training images, but their preprocessing and
+augmentation differ. The checkpoint was selected using the tuning images. These
+are validation comparisons and have been inspected repeatedly, and the models
+remain weak at localization. The test split remains unopened. Ultralytics lists
+YOLO11 under AGPL-3.0 and enterprise licenses; assess licensing before use beyond
+this study. Official model documentation: https://docs.ultralytics.com/models/yolo11
+
+The professor requires a carefully tuned non-deep-learning reference and fair
+comparisons on the same data and task, validation/test separation for the full
+system and chosen extension, and exactly one final test measurement. Choices,
+cost assumptions, operating thresholds and metrics must follow the factory need.
+Production evidence must include documented CPU throughput, paired optimization
+speed and quality changes, and concrete monitoring thresholds. The final analysis
+must quantify failures and support its recommendation with measurements. The
+repository must replay as provided in under 15 minutes, with documented code and
+regular history. Test tuning, unexecuted numbers and failed replay are penalized.
+
+Current binary methods are initial fixed configurations, and the localization
+pilot is preliminary. Image-level and detection methods produce different
+outputs and need task-matched comparisons on identical validation IDs. The
+test has not been opened. Hyperparameter tuning, the rare-defect extension's
+separate protocol, controlled CPU benchmarking, optimization trade-offs,
+monitoring thresholds, quantified failure analysis and timed clean replay remain
+to be completed. Instructor acceptance of the Severstal-only choice is unverified.
 
 ## AI assistance
 
 Codex assisted with project planning, dataset research, repository and data
-preparation, inspection scripts, checks and documentation. Add further actual
+preparation, inspection scripts, classical pilot, MLflow integration, checks and documentation. Add further actual
 uses as they occur so the owner can write the required final disclosure.

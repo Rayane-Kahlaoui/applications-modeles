@@ -118,9 +118,9 @@ These are fixture checks.
 
 ## Classical pilot
 
-The owner selected Severstal as the sole study dataset. The assignment names
-NEU-DET and its shared split, so instructor acceptance of this choice remains
-unverified.
+The owner selected Severstal as the sole study dataset and clarified that any
+dataset may be used. The written assignment names NEU-DET and its shared split.
+This clarification is recorded as the owner's information.
 
 On the `model/classical` branch, an exploratory Severstal HOG/linear-SVM pilot
 used 500 train and 30 validation images, seed 0. The initial random validation
@@ -365,7 +365,155 @@ remain documented, at costs 0.278 and 0.264 respectively. These selections are
 for binary image alerts and do not establish localization, type recognition,
 rare-class performance or a final production model. The test remains unopened.
 
+### Larger frozen CNN comparisons
+
+On 2026-11-23, MobileNetV3-Large and EfficientNet-B2 were compared using the
+same full-image 256-by-64 preprocessing, ImageNet normalization, frozen
+backbones and standardized, class-balanced logistic heads as the earlier CNNs.
+All five runs in the table used identical ordered training (10,050), validation
+tuning (626) and comparison (626) IDs, verified from their saved results.
+Thresholds minimized the assumed 10:1 image-level cost on tuning. The
+comparison portion contains 331 defective and 295 defect-free images.
+
+| Model | Tuning cost/image | Comparison TP | FP | FN | TN | AP | Precision | Recall | F1 | Comparison cost/image |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Extra Trees | 0.184 | 326 | 81 | 5 | 214 | 0.970 | 0.801 | 0.985 | 0.883 | 0.209 |
+| MobileNetV3-Small | 0.220 | 327 | 129 | 4 | 166 | 0.954 | 0.717 | 0.988 | 0.831 | 0.270 |
+| MobileNetV3-Large | 0.268 | 330 | 162 | 1 | 133 | 0.946 | 0.671 | 0.997 | 0.802 | 0.275 |
+| EfficientNet-B0 | 0.316 | 329 | 164 | 2 | 131 | 0.938 | 0.667 | 0.994 | 0.799 | 0.294 |
+| EfficientNet-B2 | 0.297 | 330 | 160 | 1 | 135 | 0.946 | 0.673 | 0.997 | 0.804 | 0.272 |
+
+Both new CNNs alerted on all 11 comparison images containing class 2. This is
+image-level alert recall, including mixed-class images, and does not measure
+defect type identification. MobileNetV3-Small remains the lightweight CNN
+reference because its selected tuning and comparison costs are lower than the
+Large variant's. EfficientNet-B2 becomes the EfficientNet frozen-feature
+reference for future comparisons because its tuning and comparison costs and
+AP improved over B0, with one fewer comparison miss and four fewer false
+alerts. Retain B0 and MobileNetV3-Large results as additional evidence. Extra
+Trees remains the primary classical reference. None of these selections is a
+final test result or a claim that the same ranking will hold in production.
+
+The new official Torchvision weights were downloaded from
+`https://download.pytorch.org/models/mobilenet_v3_large-5c1a4163.pth` (SHA-256
+`5c1a416349c4cf298f2a6a5e2600ed0ee55e604713578f5e74e6bc8bcaef7997`) and
+`https://download.pytorch.org/models/efficientnet_b2_rwightman-c35c1473.pth`
+(SHA-256 `c35c147384e385a5bab5a8eabdabbe5a3df0487ee4a554108626ae474a5bf755`).
+The saved heads, scores, IDs, metrics and weights are in the local MLflow runs
+and ignored output directories `.cache/mobilenet-large-binary-v1/` and
+`.cache/efficientnet-b2-binary-v1/`. The respective MLflow runs include the
+weight files. The source snapshots record the runner used for these experiments.
+
+On the same first 100 comparison images, with five warm-ups and four CPU
+threads, decoded-image-to-score median/p95 timing was 12.9/14.9 ms for Large
+and 28.2/35.9 ms for B2. Earlier Small and B0 timings were 7.4/9.2 ms and
+20.3/24.5 ms respectively. Timing excludes disk access and is exploratory;
+the measurements were made in separate sessions and are not end-to-end factory
+benchmarks. Repeated selection on validation and unknown factory prevalence
+limit interpretation. The test remains unopened.
+
 ## Rubric and remaining evidence
+
+### Classical localization follow-up
+
+On 2026-11-23, the region detector was extended with three interleaved contrast
+proposal scales, a combined HOG/local-binary-pattern/shape feature set and a
+balanced 150-tree Extra Trees crop classifier. Proposals and hard backgrounds
+were sampled from training images. The validation tuning study used the same
+first 100 tuning images and 136 reference boxes as the earlier proposal study.
+Using 500 training images, the new proposals covered 56/136 boxes at IoU 0.5,
+versus 46/136 for the best earlier proposal grid. The combined 500-image
+texture/SGD run reached AP50 0.01415 and the Extra Trees run 0.01446. The SGD
+fit reached its iteration limit. Multiple settings changed together, so their
+individual contributions are not established.
+
+Using 2,000 training images with the same proposal and Extra Trees settings gave
+13 TP, 69 FP, 123 FN and AP50 0.01597 on those 100 tuning images. Training on
+all 10,050 images gave 21 TP, 118 FP, 115 FN and AP50 0.01840. Both thresholds
+minimized the 10:1 per-box error cost on these tuning images. The full-data fit
+required 540.0 seconds for training feature extraction and 79.8 seconds for
+classifier fitting. One attempt to score every class per proposal with the
+2,000-image model gave the same tuning-selected counts, so the simpler scoring
+path was retained. Its source snapshot and results remain in MLflow.
+
+The fitted models and thresholds were then evaluated without refitting on the
+same 626 comparison images used by the earlier classical and YOLO pilots.
+Comparison results were:
+
+| Candidate | Training images | TP | FP | FN | AP50 | Box cost/image |
+|---|---:|---:|---:|---:|---:|---:|
+| Earlier classical pilot | 500 | 16 | 306 | 961 | 0.00625 | 15.84 |
+| Multiscale texture Extra Trees | 2,000 | 86 | 420 | 891 | 0.01789 | 14.90 |
+| Multiscale texture Extra Trees | 10,050 | 127 | 730 | 850 | 0.02228 | 14.74 |
+
+The comparison sample contains 977 component-derived reference boxes. The
+full-data model's 127 matches were all class 3. It matched none of the 159
+class-1, 15 class-2 or 87 class-4 boxes at the selected threshold. Its
+proposal recall was 323/977, before class scoring, and the comparison median/p95
+decoded-image inference timing was 0.222/0.252 seconds with no warm-up. This
+timing is exploratory and excludes disk. A YOLO pilot trained on only 500 images
+previously reached AP50 0.02754 on these same images, with its own training
+regime. The different training sizes and settings limit interpretation.
+
+These runs are retained in local MLflow and `.cache/region-multiscale-*` along
+with fitted models, predictions, IDs and settings. In the two saved-model
+comparison runs, the `hard_negatives` parameter and configuration recorded the
+evaluation command's default `false`, even though the source training runs used
+hard negatives. The `source_run_id` links to the correct training records. The
+runner was corrected after these comparisons to record the source setting.
+Repeated validation use limits independence, the test remains unopened, and the
+rare-class result and false-alert burden show that this is still a weak
+localization baseline. A clean replay and controlled end-to-end CPU benchmark
+remain outstanding.
+
+### Cycle 4 baseline selection and replay
+
+The selected class-aware classical reference at this point is the full-training
+multiscale texture/Extra Trees detector. Its tuning run is
+`a371f915bc8c487d86b01c34a564b731` and its fixed-threshold comparison run is
+`3c9bd18408d34c3f8333fbea26f84534`. It achieved AP50 0.02228, 127 TP, 730 FP,
+850 FN and cost/image 14.744 on 626 comparison images. All 127 matched boxes
+were class 3. This weak result is the measured classical reference and a fair
+future detector comparison must use the same images, reference boxes, matching
+rules and task-level metrics. AP50 and box-level cost differ from image-level
+classification AP and cost.
+
+As a separate image-alert reference, Extra Trees produced 326 TP, 81 FP, five
+FN, 214 TN, AP 0.97009 and cost/image 0.20927 on the same 626 images. The
+frozen-feature MobileNetV3-Small and EfficientNet-B2 runs remain CNN references.
+These binary runs cannot provide defect type or location.
+
+On 2026-11-23, the selected localization model was reloaded from
+`.cache/region-multiscale-trees-full-v1/model.joblib`. The first five comparison
+images, the same processing settings and the threshold -0.09999999999999998
+reproduced the originally saved ground truth and prediction lists exactly.
+Replay run ID is `aa32450266224b1c8de83cc9291c6269`. This is a local five-image
+check, not a clean-clone replay. The fitted model is 595,447,866 bytes and the
+binary Extra Trees model is 100,731,513 bytes. Both remain in the ignored local
+cache and MLflow artifacts, and require an appropriate distribution method for
+the instructor. The SVM regularization grid remains untested. Repeated
+validation examination and unverified production-run independence limit
+generalization. The test split remains unopened.
+
+### Linear SVM regularization check
+
+The stochastic hinge-loss SVM was compared with three alpha values on the same
+500 training images, multiscale proposals, texture features and 100 tuning
+images. Alpha 0.00001 yielded TP 7, FP 68, FN 129, AP50 0.01549 and cost per
+image 13.58. Alpha 0.0001 yielded TP 4, FP 37, FN 132, AP50 0.01415 and cost
+13.57. Alpha 0.001 yielded TP 3, FP 19, FN 133, AP50 0.01455 and cost 13.49.
+The 0.0001 and 0.001 fits reported reaching the iteration limit. Thresholds
+were each selected on these same tuning images, and no final-test data was
+used. This small grid improves documentation of classical tuning but does not
+establish a global optimum or a class-balanced detector. The chosen full-data
+Extra Trees model had tuning cost 12.68 under the same 10:1 per-box assumption,
+with a larger training budget. Experiment configurations and predictions are
+retained locally in MLflow.
+
+Selected model copies, weight hashes and validation predictions have been
+prepared under `projet/artifacts/baselines/` for Git LFS distribution. These
+support inspection of selected evidence, while the complete MLflow store still
+requires a portable export. A clean-clone replay has not yet been verified.
 
 ### Binary baseline tuning experiment
 
@@ -471,7 +619,7 @@ outputs and need task-matched comparisons on identical validation IDs. The
 test has not been opened. Hyperparameter tuning, the rare-defect extension's
 separate protocol, controlled CPU benchmarking, optimization trade-offs,
 monitoring thresholds, quantified failure analysis and timed clean replay remain
-to be completed. Instructor acceptance of the Severstal-only choice is unverified.
+to be completed. The owner clarified that any dataset may be used.
 
 ## AI assistance
 

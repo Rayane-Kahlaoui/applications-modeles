@@ -90,6 +90,18 @@ stochastic linear SVM. For a separate comparison partition, pass its IDs through
 `--validation-ids` and `--validation-id-key`, and pass the threshold selected
 on tuning with `--fixed-threshold`. Model and proposal settings must stay fixed.
 
+The classical detector also accepts `--proposal-mode multiscale`, which combines
+contrast proposals at fixed sigma/cutoff pairs (3, 10), (9, 20) and (20, 25),
+interleaved under the total proposal cap. `--feature-set texture` adds a local
+binary-pattern histogram and crop shape/intensity statistics to HOG.
+`--classifier extra-trees` fits a balanced 150-tree model. `--model-from` loads a
+saved run instead of refitting. Use `--fixed-threshold` for a separate
+comparison and pass the same classifier, proposal and feature settings as the
+saved run. For tuning a loaded model without a fixed threshold, provide explicit
+validation IDs. The test split remains reserved for the final frozen evaluation.
+With `--classifier sgd`, `--svm-alpha` controls the hinge-loss SVM's
+regularization strength.
+
 ## Pretrained detector pilot
 
 `detector.py` runs an optional Ultralytics YOLO11n detection pilot from a local
@@ -115,19 +127,23 @@ This is an exploratory pilot and its local output and checkpoint are Git-ignored
 
 ## Pretrained image classifiers
 
-`cnn_classifier.py` compares frozen ImageNet-pretrained MobileNetV3-Small and
-EfficientNet-B0 feature extractors with a balanced logistic-regression head.
+`cnn_classifier.py` compares frozen ImageNet-pretrained MobileNetV3-Small,
+MobileNetV3-Large, EfficientNet-B0 and EfficientNet-B2 feature extractors with a
+balanced logistic-regression head.
 It resizes the full grayscale image to 256 by 64, repeats it into three channels
 and applies ImageNet normalization. This uses the whole steel image but differs
 from the original ImageNet crop. The feature backbone is frozen and the head is
 fitted using training images. It uses the same seeded 626/626 validation split
 and tunes the 10:1 image-alert threshold only on the tuning half.
 
-The default weight directory must contain the official Torchvision files
-`mobilenet_v3_small-047dcff4.pth` and `efficientnet_b0_rwightman-7f5810bc.pth`.
-They are available from the official Torchvision weight URLs
+The default weight directory must contain the official Torchvision file for the
+selected model. For Small and B0 these are `mobilenet_v3_small-047dcff4.pth` and
+`efficientnet_b0_rwightman-7f5810bc.pth`. Their official URLs are
 https://download.pytorch.org/models/mobilenet_v3_small-047dcff4.pth and
 https://download.pytorch.org/models/efficientnet_b0_rwightman-7f5810bc.pth.
+For Large and B2 the official URLs are
+https://download.pytorch.org/models/mobilenet_v3_large-5c1a4163.pth and
+https://download.pytorch.org/models/efficientnet_b2_rwightman-c35c1473.pth.
 The run records the hash, backbone, source script, classifier head, sample IDs
 and scores in MLflow. To replay, retain or obtain the same pretrained weight
 file and check its hash. A run is launched with:

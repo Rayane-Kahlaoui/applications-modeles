@@ -21,7 +21,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from threadpoolctl import threadpool_limits
-from torchvision.models import efficientnet_b0, mobilenet_v3_small
+from torchvision.models import efficientnet_b0, efficientnet_b2, mobilenet_v3_large, mobilenet_v3_small
 
 from projet.mlops.tracking import start_run
 from projet.preprocessing.severstal import SeverstalDataset
@@ -31,7 +31,9 @@ from projet.timing import benchmark_inference
 
 
 MODELS = {"mobilenet-v3-small": (mobilenet_v3_small, "mobilenet_v3_small-047dcff4.pth"),
-          "efficientnet-b0": (efficientnet_b0, "efficientnet_b0_rwightman-7f5810bc.pth")}
+          "mobilenet-v3-large": (mobilenet_v3_large, "mobilenet_v3_large-5c1a4163.pth"),
+          "efficientnet-b0": (efficientnet_b0, "efficientnet_b0_rwightman-7f5810bc.pth"),
+          "efficientnet-b2": (efficientnet_b2, "efficientnet_b2_rwightman-c35c1473.pth")}
 
 
 class CustomCNN(nn.Module):

@@ -31,6 +31,18 @@ class BaselineTest(unittest.TestCase):
         boxes = propose(image, cutoff=25, min_area=10, max_regions=1)
         self.assertEqual(len(boxes), 1)
 
+    def test_multiscale_region_proposals_and_texture_features(self):
+        image = np.full((128, 256), 128, dtype=np.uint8)
+        image[30:50, 30:50] = 255
+        image[70:90, 180:200] = 0
+        boxes = propose(image, cutoff=25, min_area=10, max_regions=3, mode="multiscale")
+        self.assertGreater(len(boxes), 0)
+        self.assertLessEqual(len(boxes), 3)
+        self.assertEqual(len(boxes), len({tuple(box) for box in boxes}))
+        texture = crop_features(image, boxes[0], feature_set="texture")
+        self.assertGreater(len(texture), len(crop_features(image, boxes[0])))
+        self.assertTrue(np.isfinite(texture).all())
+
     def test_custom_cnn_and_seeded_augmentation(self):
         images = np.full((2, 64, 256), 128, dtype=np.uint8)
         masks = np.zeros_like(images)
